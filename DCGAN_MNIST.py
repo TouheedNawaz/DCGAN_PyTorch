@@ -169,7 +169,7 @@ G = G.to(device)
 criterion = criterion.to(device)
 
 # --- Training Hyperparameters ---
-EPOCHS = 1
+EPOCHS = 50
 FAKE_LABEL = 0.0
 REAL_LABEL = 1.0
 
