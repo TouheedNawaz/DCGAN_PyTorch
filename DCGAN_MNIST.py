@@ -184,6 +184,10 @@ for epoch in range(1, EPOCHS + 1):
   # Create a progress bar for the current epoch.
   pbar = tqdm(enumerate(trainloader), total=len(trainloader), desc=f"Epoch {epoch}/{EPOCHS}")
   for i, (images, labels) in pbar:
+    # At the start of each epoch, save a batch of real images
+    if i == 0:
+        vutils.save_image(images, f"{images_dir}/real_samples_epoch_{epoch}.png", normalize=True, nrow=8)
+        
     # Move the batch of real images to the device.
     images = images.to(device)
     
