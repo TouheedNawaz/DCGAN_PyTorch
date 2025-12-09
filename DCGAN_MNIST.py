@@ -178,9 +178,6 @@ log_file = open(f"{logs_dir}/training.log", "w")
 
 # --- Main Training Loop ---
 for epoch in range(1, EPOCHS + 1):
-  loss_d = 0.0
-  loss_g = 0.0
-  
   # Create a progress bar for the current epoch.
   pbar = tqdm(enumerate(trainloader), total=len(trainloader), desc=f"Epoch {epoch}/{EPOCHS}")
   for i, (images, labels) in pbar:
@@ -204,6 +201,7 @@ for epoch in range(1, EPOCHS + 1):
     d_real = D(images).view(-1)
     d_loss_real = criterion(d_real, real_labels)
     d_loss_real.backward()
+    avg_d_real = d_real.mean().item()
 
     # --- Train with fake images ---
     # Generate a batch of fake images using the Generator.
@@ -214,6 +212,7 @@ for epoch in range(1, EPOCHS + 1):
     d_fake = D(fake_images.detach()).view(-1)
     d_loss_fake = criterion(d_fake, fake_labels)
     d_loss_fake.backward()
+    avg_d_fake = d_fake.mean().item()
 
     # The total discriminator loss is the sum of the real and fake losses.
     d_loss = d_loss_real + d_loss_fake
@@ -226,11 +225,12 @@ for epoch in range(1, EPOCHS + 1):
     G.zero_grad()
 
     # Get the Discriminator's prediction on the fake images.
-    d_fake = D(fake_images).view(-1)
+    d_output_g = D(fake_images).view(-1)
     # The Generator's goal is to make the Discriminator classify its fake images as real.
     # So, we calculate the loss using the `real_labels`.
-    g_loss = criterion(d_fake, real_labels)
+    g_loss = criterion(d_output_g, real_labels)
     g_loss.backward()
+    avg_g_fooled_d = d_output_g.mean().item()
 
     # Update the Generator's weights.
     optim_G.step()
@@ -239,14 +239,16 @@ for epoch in range(1, EPOCHS + 1):
     #  (3) Logging & Saving
     # ---------------------
     if i % 100 == 0:
-      log_message = f"Epoch [{epoch}/{EPOCHS}], Batch [{i}], LOSS_D: {d_loss.item():.4f}, LOSS_G: {g_loss.item():.4f}"
+      log_message = (f"Epoch [{epoch}/{EPOCHS}], Batch [{i}/{len(trainloader)}] | "
+                     f"D_loss: {d_loss.item():.4f}, G_loss: {g_loss.item():.4f} | "
+                     f"D(real): {avg_d_real:.3f}, D(fake): {avg_d_fake:.3f}, G_fooled_D: {avg_g_fooled_d:.3f}")
       pbar.set_postfix_str(log_message)
       log_file.write(log_message + "\n")
       
       # Save a grid of sample images generated from the fixed noise vector.
       with torch.no_grad():
         sample_images = G(fixed_noise).cpu().detach()
-        vutils.save_image(sample_images, f"{images_dir}/epoch_{epoch}batch_{i}.png", normalize=True, nrow=4)
+        vutils.save_image(sample_images, f"{images_dir}/epoch_{epoch}_batch_{i}.png", normalize=True, nrow=4)
 
 # Close the log file and indicate that training is complete.
 log_file.close()
