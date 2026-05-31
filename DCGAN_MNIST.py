@@ -24,6 +24,10 @@ run_dir = f"runs/{UNIQUE_RUN_ID}"
 logs_dir = f"{run_dir}/logs"
 images_dir = f"{run_dir}/generated_images"
 
+checkpoints_dir = f"{run_dir}/checkpoints"
+
+os.makedirs(checkpoints_dir, exist_ok=True)
+
 # Create the directories if they don't already exist.
 os.makedirs(logs_dir, exist_ok=True)
 os.makedirs(images_dir, exist_ok=True)
@@ -178,77 +182,94 @@ log_file = open(f"{logs_dir}/training.log", "w")
 
 # --- Main Training Loop ---
 for epoch in range(1, EPOCHS + 1):
-  # Create a progress bar for the current epoch.
-  pbar = tqdm(enumerate(trainloader), total=len(trainloader), desc=f"Epoch {epoch}/{EPOCHS}")
-  for i, (images, labels) in pbar:
-    # At the start of each epoch, save a batch of real images
-    if i == 0:
-        vutils.save_image(images, f"{images_dir}/real_samples_epoch_{epoch}.png", normalize=True, nrow=8)
-        
-    # Move the batch of real images to the device.
-    images = images.to(device)
-    
-    # Create labels for fake and real images.
-    fake_labels = torch.full((images.size(0), ), FAKE_LABEL, device=device)
-    real_labels = torch.full((images.size(0), ), REAL_LABEL, device=device)
+    # Create a progress bar for the current epoch.
+    pbar = tqdm(enumerate(trainloader), total=len(trainloader), desc=f"Epoch {epoch}/{EPOCHS}")
 
-    # -------------------------
-    #  (1) Train Discriminator
-    # -------------------------
-    D.zero_grad()
+    for i, (images, labels) in pbar:
+        # At the start of each epoch, save a batch of real images
+        if i == 0:
+            vutils.save_image(
+                images,
+                f"{images_dir}/real_samples_epoch_{epoch}.png",
+                normalize=True,
+                nrow=8
+            )
 
-    # --- Train with real images ---
-    d_real = D(images).view(-1)
-    d_loss_real = criterion(d_real, real_labels)
-    d_loss_real.backward()
-    avg_d_real = d_real.mean().item()
+        # Move the batch of real images to the device.
+        images = images.to(device)
 
-    # --- Train with fake images ---
-    # Generate a batch of fake images using the Generator.
-    noise = torch.randn((images.size(0), 100, 1, 1), device=device)
-    fake_images = G(noise)
+        # Create labels for fake and real images.
+        fake_labels = torch.full((images.size(0),), FAKE_LABEL, device=device)
+        real_labels = torch.full((images.size(0),), REAL_LABEL, device=device)
 
-    # We use .detach() here because we don't want to backpropagate through the Generator while training the Discriminator.
-    d_fake = D(fake_images.detach()).view(-1)
-    d_loss_fake = criterion(d_fake, fake_labels)
-    d_loss_fake.backward()
-    avg_d_fake = d_fake.mean().item()
+        # -------------------------
+        # (1) Train Discriminator
+        # -------------------------
+        D.zero_grad()
 
-    # The total discriminator loss is the sum of the real and fake losses.
-    d_loss = d_loss_real + d_loss_fake
-    # Update the Discriminator's weights.
-    optim_D.step()
+        d_real = D(images).view(-1)
+        d_loss_real = criterion(d_real, real_labels)
+        d_loss_real.backward()
+        avg_d_real = d_real.mean().item()
 
-    # ---------------------
-    #  (2) Train Generator
-    # ---------------------
-    G.zero_grad()
+        noise = torch.randn((images.size(0), 100, 1, 1), device=device)
+        fake_images = G(noise)
 
-    # Get the Discriminator's prediction on the fake images.
-    d_output_g = D(fake_images).view(-1)
-    # The Generator's goal is to make the Discriminator classify its fake images as real.
-    # So, we calculate the loss using the `real_labels`.
-    g_loss = criterion(d_output_g, real_labels)
-    g_loss.backward()
-    avg_g_fooled_d = d_output_g.mean().item()
+        d_fake = D(fake_images.detach()).view(-1)
+        d_loss_fake = criterion(d_fake, fake_labels)
+        d_loss_fake.backward()
+        avg_d_fake = d_fake.mean().item()
 
-    # Update the Generator's weights.
-    optim_G.step()
+        d_loss = d_loss_real + d_loss_fake
+        optim_D.step()
 
-    # ---------------------
-    #  (3) Logging & Saving
-    # ---------------------
-    if i % 100 == 0:
-      log_message = (f"Epoch [{epoch}/{EPOCHS}], Batch [{i}/{len(trainloader)}] | "
-                     f"D_loss: {d_loss.item():.4f}, G_loss: {g_loss.item():.4f} | "
-                     f"D(real): {avg_d_real:.3f}, D(fake): {avg_d_fake:.3f}, G_fooled_D: {avg_g_fooled_d:.3f}")
-      pbar.set_postfix_str(log_message)
-      log_file.write(log_message + "\n")
-      
-      # Save a grid of sample images generated from the fixed noise vector.
-      with torch.no_grad():
-        sample_images = G(fixed_noise).cpu().detach()
-        vutils.save_image(sample_images, f"{images_dir}/epoch_{epoch}_batch_{i}.png", normalize=True, nrow=4)
+        # ---------------------
+        # (2) Train Generator
+        # ---------------------
+        G.zero_grad()
+
+        d_output_g = D(fake_images).view(-1)
+        g_loss = criterion(d_output_g, real_labels)
+        g_loss.backward()
+        avg_g_fooled_d = d_output_g.mean().item()
+
+        optim_G.step()
+
+        # ---------------------
+        # (3) Logging & Saving
+        # ---------------------
+        if i % 100 == 0:
+            log_message = (
+                f"Epoch [{epoch}/{EPOCHS}], Batch [{i}/{len(trainloader)}] | "
+                f"D_loss: {d_loss.item():.4f}, G_loss: {g_loss.item():.4f} | "
+                f"D(real): {avg_d_real:.3f}, D(fake): {avg_d_fake:.3f}, "
+                f"G_fooled_D: {avg_g_fooled_d:.3f}"
+            )
+
+            pbar.set_postfix_str(log_message)
+            log_file.write(log_message + "\n")
+
+            with torch.no_grad():
+                sample_images = G(fixed_noise).cpu().detach()
+                vutils.save_image(
+                    sample_images,
+                    f"{images_dir}/epoch_{epoch}_batch_{i}.png",
+                    normalize=True,
+                    nrow=4
+                )
+
+    # ---------------------------------------
+    # Save checkpoints AFTER each epoch
+    # ---------------------------------------
+    torch.save(
+        G.state_dict(),
+        f"{checkpoints_dir}/generator_epoch_{epoch}.pth"
+    )
+
+    torch.save(
+        D.state_dict(),
+        f"{checkpoints_dir}/discriminator_epoch_{epoch}.pth"
+    )
 
 # Close the log file and indicate that training is complete.
 log_file.close()
